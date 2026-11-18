@@ -20,6 +20,7 @@ jobs:
         run: |
           curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared.deb
+          rm cloudflared.deb
 
       - name: Install & Build Static Assets
         env:
@@ -28,16 +29,34 @@ jobs:
           npm ci
           npm run build
 
-      - name: Deploy compiled dist folder via Rsync over Cloudflare Tunnel
-        uses: easingthemes/ssh-deploy@v5.1.0
-        with:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
-          REMOTE_USER: ${{ secrets.REMOTE_USER }}
-          SOURCE: "dist/"
-          TARGET: "/var/www/test-app"
-          ARGS: "-rltgoDzvO --delete"
-          SSH_CMD_ARGS: "-o StrictHostKeyChecking=no -o ProxyCommand='cloudflared access ssh --hostname %h'"
-          SSH_EXTRA_OPTIONS: "-o StrictHostKeyChecking=no -o ProxyCommand='cloudflared access ssh --hostname %h'"
-          SCRIPT_AFTER: |
-            pm2 restart test-app
+      - name: Configure Fast SSH via Cloudflare Tunnel
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat <<EOF > ~/.ssh/config
+          Host vps-tunnel
+            HostName ${{ secrets.REMOTE_HOST }}
+            User ${{ secrets.REMOTE_USER }}
+            IdentityFile ~/.ssh/id_ed25519
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            AddressFamily inet6
+            ConnectTimeout 10
+            ProxyCommand cloudflared access ssh --hostname %h
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Compress, Transfer & Deploy
+        run: |
+          # 1. Archive dist files locally
+          tar -czf dist.tar.gz -C dist .
+
+          # 2. Upload single tarball over Tunnel
+          scp dist.tar.gz vps-tunnel:/tmp/dist.tar.gz
+
+          # 3. Extract to web root & restart PM2 cleanly
+          ssh vps-tunnel "tar -xzf /tmp/dist.tar.gz -C /var/www/test-app --overwrite && rm /tmp/dist.tar.gz && pm2 restart test-app"
+
+          # 4. Clean up local runner artifact
+          rm dist.tar.gz
