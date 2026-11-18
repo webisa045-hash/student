@@ -55,8 +55,8 @@ jobs:
           # 2. Upload single tarball over Tunnel
           scp dist.tar.gz vps-tunnel:/tmp/dist.tar.gz
 
-          # 3. Extract to web root & restart PM2 cleanly
-          ssh vps-tunnel "tar -xzf /tmp/dist.tar.gz -C /var/www/test-app --overwrite && rm /tmp/dist.tar.gz && pm2 restart test-app"
+          # 3. Extract to web root & restart PM2 using absolute path
+          ssh vps-tunnel "tar -xzf /tmp/dist.tar.gz -C /var/www/test-app --overwrite && rm /tmp/dist.tar.gz && /home/charles/.npm-global/bin/pm2 restart test-app"
 
           # 4. Clean up local runner artifact
           rm dist.tar.gz
