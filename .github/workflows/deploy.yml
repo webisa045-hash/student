@@ -1,41 +1,36 @@
-name: Deploy Test App to VPS
+name: Deploy React App to RackGenius VPS
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
-  deploy:
-    name: Build & Deploy to VPS
+  build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
           node-version: 20
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build application
-        run: npm run build
+      - name: Install & Build Static Assets
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+        run: |
+          npm ci
+          npm run build
 
-      - name: Deploy to VPS via SSH
-        uses: easingthemes/ssh-deploy@v5
-        env:
+      - name: Deploy compiled dist folder via Rsync
+        uses: easingthemes/ssh-deploy@v5.1.0
+        with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
           SOURCE: "dist/"
           TARGET: "/var/www/test-app"
-          ARGS: "-rlgoDzvc -i --delete"
+          ARGS: "-rltgoDzvO --delete"
           SCRIPT_AFTER: |
-            pm2 restart test-app || pm2 serve /var/www/test-app 8080 --name test-app --spa && pm2 save
+            pm2 restart test-app
